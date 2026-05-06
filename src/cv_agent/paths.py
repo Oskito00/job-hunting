@@ -7,6 +7,7 @@ import re
 
 
 EXPERIENCE_BANK_DIR = "experience-bank"
+WORKSPACE_DIR = ".cv-agent"
 APPLICATIONS_DIR = "applications"
 
 
@@ -21,9 +22,17 @@ def resolve_project_paths(root: Path | None = None) -> ProjectPaths:
     project_root = (root or Path.cwd()).resolve()
     return ProjectPaths(
         root=project_root,
-        experience_bank=project_root / EXPERIENCE_BANK_DIR,
+        experience_bank=resolve_experience_bank_path(project_root),
         applications=project_root / APPLICATIONS_DIR,
     )
+
+
+def resolve_experience_bank_path(project_root: Path) -> Path:
+    workspace_bank = project_root / WORKSPACE_DIR / EXPERIENCE_BANK_DIR
+    legacy_bank = project_root / EXPERIENCE_BANK_DIR
+    if workspace_bank.exists() or not legacy_bank.exists():
+        return workspace_bank
+    return legacy_bank
 
 
 def slugify(value: str) -> str:

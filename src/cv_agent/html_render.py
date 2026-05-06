@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+import re
 from typing import Any
 
 from cv_agent.render_limits import RenderLimits, validate_render_limits
@@ -9,73 +11,101 @@ from cv_agent.render_limits import RenderLimits, validate_render_limits
 
 HTML_FILENAME = "cv.html"
 RENDER_REPORT_FILENAME = "render-report.md"
-NAME = "Oscar Alberigo"
-FOUR_STAR_NOTE = "4-star skills indicate active development focus."
-CLIENT_FACING_EXPERIENCE = [
-    {
-        "role": "Beach Resort Manager",
-        "place": "Macan Beach, Andora, Italy",
-        "dates": "May 2024 - October 2024",
-    },
-    {
-        "role": "Tennis Coach",
-        "place": "CEM Tenis L'Hospitalet, Barcelona, Spain",
-        "dates": "November 2023 - May 2024",
-    },
-    {
-        "role": "Camp Counsellor / Tennis Coach",
-        "place": "Camp Lokanda, Glen Spey, NY, USA",
-        "dates": "Summer 2022",
-    },
-]
+FLOW_PAGE_MODE = "flow"
+ONE_PAGE_MODE = "one_page"
+DEFAULT_NAME = "Candidate"
+KNOWN_TEMPLATE_PLACEHOLDERS = {
+    "title",
+    "name",
+    "contact",
+    "education",
+    "skills",
+    "profile",
+    "work_experience",
+    "projects",
+    "additional_experience",
+    "page_class",
+}
+REQUIRED_TEMPLATE_PLACEHOLDERS = {"name", "contact", "profile", "work_experience", "projects", "skills", "education"}
+PRINT_NORMALIZATION_MARKER = "cv-agent-print-normalization"
 
 
-def render_cv_html_file(cv_content: dict[str, Any], output_dir: Path, limits: RenderLimits | None = None) -> Path:
-    errors = validate_render_limits(cv_content, limits)
-    write_render_report(output_dir, errors)
+@dataclass(frozen=True)
+class RenderOptions:
+    page_mode: str = FLOW_PAGE_MODE
+    template_path: Path | None = None
+
+
+def render_cv_html_file(cv_content: dict[str, Any], output_dir: Path, limits: RenderLimits | None = None, options: RenderOptions | None = None) -> Path:
+    active_options = options or RenderOptions()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    errors = render_validation_errors(cv_content, active_options, limits)
+    write_render_report(output_dir, errors, active_options)
     html_path = output_dir / HTML_FILENAME
-    html_path.write_text(render_cv_html(cv_content), encoding="utf-8")
+    html_path.write_text(render_cv_html(cv_content, active_options), encoding="utf-8")
     return html_path
 
 
-def write_render_report(output_dir: Path, errors: list[str]) -> None:
-    report = build_render_report(errors)
+def render_validation_errors(cv_content: dict[str, Any], options: RenderOptions, limits: RenderLimits | None = None) -> list[str]:
+    errors: list[str] = []
+    if options.page_mode == ONE_PAGE_MODE:
+        errors.extend(validate_render_limits(cv_content, limits))
+    if options.template_path:
+        errors.extend(validate_template_html(options.template_path.read_text(encoding="utf-8")))
+    return errors
+
+
+def write_render_report(output_dir: Path, errors: list[str], options: RenderOptions | None = None) -> None:
+    report = build_render_report(errors, options or RenderOptions())
     (output_dir / RENDER_REPORT_FILENAME).write_text(report, encoding="utf-8")
 
 
-def build_render_report(errors: list[str]) -> str:
+def build_render_report(errors: list[str], options: RenderOptions | None = None) -> str:
+    active_options = options or RenderOptions()
     if not errors:
-        return "# Render Report\n\nNo render limit issues found.\n"
-    lines = ["# Render Report", "", "The HTML was rendered, but the CV content exceeds the configured one-page limits.", ""]
+        return f"# Render Report\n\nPage mode: {active_options.page_mode}\n\nNo render issues found.\n"
+    lines = ["# Render Report", "", f"Page mode: {active_options.page_mode}", "", "The HTML was rendered, but validation found issues.", ""]
     lines.extend(f"- {error}" for error in errors)
     return "\n".join(lines) + "\n"
 
 
-def render_cv_html(content: dict[str, Any]) -> str:
+def render_cv_html(content: dict[str, Any], options: RenderOptions | None = None) -> str:
+    active_options = options or RenderOptions()
+    template_html = load_template_html(active_options.template_path)
+    return render_template_cv_html(template_html, content, active_options)
+
+
+def load_template_html(template_path: Path | None) -> str:
+    if template_path and template_path.exists():
+        return template_path.read_text(encoding="utf-8")
+    return default_template_html()
+
+
+def default_template_html() -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{escape(NAME)} CV</title>
+  <title>{{{{title}}}}</title>
   <style>{stylesheet()}</style>
 </head>
 <body>
-  <main class="page">
+  <main class="page {{{{page_class}}}}">
     <header class="top">
-      <h1>{escape(NAME)}</h1>
+      <h1>{{{{name}}}}</h1>
     </header>
     <section class="layout">
       <aside class="sidebar">
-        {render_contact(content.get("contact"))}
-        {render_education(content.get("education"))}
-        {render_skills(content.get("skills"))}
-        {render_client_facing()}
+        {{{{contact}}}}
+        {{{{education}}}}
+        {{{{skills}}}}
       </aside>
       <section class="main">
-        {render_profile(content.get("profile"))}
-        {render_work_experience(content.get("work_experience"))}
-        {render_projects(content.get("projects"))}
+        {{{{profile}}}}
+        {{{{work_experience}}}}
+        {{{{projects}}}}
+        {{{{additional_experience}}}}
       </section>
     </section>
   </main>
@@ -84,7 +114,130 @@ def render_cv_html(content: dict[str, Any]) -> str:
 """
 
 
+def render_template_cv_html(template_html: str, content: dict[str, Any], options: RenderOptions) -> str:
+    replacements = build_template_replacements(content, options, custom_template=options.template_path is not None)
+    html = template_html
+    for name, value in replacements.items():
+        html = replace_placeholder(html, name, value)
+    return apply_print_normalization(html)
+
+
+def apply_print_normalization(html: str) -> str:
+    if PRINT_NORMALIZATION_MARKER in html:
+        return html
+    style = f"<style id=\"{PRINT_NORMALIZATION_MARKER}\">{print_normalization_stylesheet()}</style>"
+    if "</head>" in html:
+        return html.replace("</head>", f"{style}\n</head>", 1)
+    return style + html
+
+
+def print_normalization_stylesheet() -> str:
+    return """
+@media print {
+  .section,
+  .experience-section,
+  .work-section,
+  .work-list {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .experience-section,
+  .work-section {
+    break-before: auto !important;
+    page-break-before: auto !important;
+  }
+
+  .experience-section .entry,
+  .work-section .entry,
+  .work-list .entry {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .section-title,
+  h2,
+  h3 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+}
+"""
+
+
+def build_template_replacements(content: dict[str, Any], options: RenderOptions, custom_template: bool = False) -> dict[str, str]:
+    name = candidate_name(content)
+    if custom_template:
+        contact = render_contact_body(content.get("contact"))
+        education = render_education_body(content.get("education"))
+        skills = render_skills_body(content.get("skills"))
+        profile = render_profile_body(content.get("profile"))
+        work_experience = render_work_body(content.get("work_experience"))
+        projects = render_projects_body(content.get("projects"))
+        additional_experience = render_additional_body(content.get("additional_experience"))
+    else:
+        contact = render_contact(content.get("contact"))
+        education = render_education(content.get("education"))
+        skills = render_skills(content.get("skills"))
+        profile = render_profile(content.get("profile"))
+        work_experience = render_work_experience(content.get("work_experience"))
+        projects = render_projects(content.get("projects"))
+        additional_experience = render_additional_experience(content.get("additional_experience"))
+    return {
+        "title": f"{name} CV",
+        "name": escape(name),
+        "contact": contact,
+        "education": education,
+        "skills": skills,
+        "profile": profile,
+        "work_experience": work_experience,
+        "projects": projects,
+        "additional_experience": additional_experience,
+        "page_class": escape(page_mode_classes(options.page_mode)),
+    }
+
+
+def page_mode_classes(page_mode: str) -> str:
+    if page_mode == ONE_PAGE_MODE:
+        return "one_page one-page"
+    return page_mode.replace("_", "-")
+
+
+def candidate_name(content: dict[str, Any]) -> str:
+    contact = dict_value(content.get("contact"))
+    name = str(contact.get("name", "")).strip()
+    return name or DEFAULT_NAME
+
+
+def replace_placeholder(html: str, name: str, value: str) -> str:
+    return re.sub(r"{{\s*" + re.escape(name) + r"\s*}}", value, html)
+
+
+def validate_template_html(template_html: str) -> list[str]:
+    placeholders = set(find_template_placeholders(template_html))
+    errors: list[str] = []
+    missing = sorted(REQUIRED_TEMPLATE_PLACEHOLDERS - placeholders)
+    if missing:
+        errors.append("template is missing placeholders: " + ", ".join(f"{{{{{name}}}}}" for name in missing))
+    unknown = sorted(placeholders - KNOWN_TEMPLATE_PLACEHOLDERS)
+    if unknown:
+        errors.append("template contains unknown placeholders: " + ", ".join(f"{{{{{name}}}}}" for name in unknown))
+    return errors
+
+
+def find_template_placeholders(template_html: str) -> list[str]:
+    return [match.strip() for match in re.findall(r"{{\s*([a-zA-Z0-9_]+)\s*}}", template_html)]
+
+
+def find_unresolved_template_tokens(html: str) -> list[str]:
+    return re.findall(r"{{\s*[a-zA-Z0-9_]+\s*}}", html)
+
+
 def render_contact(contact: object) -> str:
+    return render_sidebar_section("Contact", render_contact_body(contact))
+
+
+def render_contact_body(contact: object) -> str:
     data = dict_value(contact)
     rows = [
         contact_link("email", "Email", data.get("email", ""), f"mailto:{data.get('email', '')}"),
@@ -92,8 +245,9 @@ def render_contact(contact: object) -> str:
         contact_link("linkedin", "LinkedIn", "LinkedIn", data.get("linkedin", "")),
         contact_link("website", "Website", "Website", data.get("website", "")),
         contact_link("github", "GitHub", "GitHub", data.get("github", "")),
+        contact_text("location", "Location", data.get("location", "")),
     ]
-    return render_sidebar_section("Contact", "".join(row for row in rows if row))
+    return "".join(row for row in rows if row)
 
 
 def contact_link(kind: str, label: str, text: object, href: object) -> str:
@@ -107,6 +261,16 @@ def contact_link(kind: str, label: str, text: object, href: object) -> str:
 </a>"""
 
 
+def contact_text(kind: str, label: str, text: object) -> str:
+    display_text = str(text).strip()
+    if not display_text:
+        return ""
+    return f"""<div class="contact-row" data-kind="{escape(kind)}" aria-label="{escape(label)}">
+  <span class="contact-icon">{contact_icon(kind)}</span>
+  <span class="contact-text">{escape(display_text)}</span>
+</div>"""
+
+
 def contact_icon(kind: str) -> str:
     icons = {
         "email": "✉",
@@ -114,6 +278,7 @@ def contact_icon(kind: str) -> str:
         "linkedin": linkedin_svg(),
         "website": website_svg(),
         "github": github_svg(),
+        "location": "⌂",
     }
     return icons.get(kind, "•")
 
@@ -137,9 +302,12 @@ def website_svg() -> str:
 
 
 def render_education(education: object) -> str:
+    return render_sidebar_section("Education", render_education_body(education))
+
+
+def render_education_body(education: object) -> str:
     entries = list_value(education)
-    body = "".join(render_education_entry(entry) for entry in entries)
-    return render_sidebar_section("Education", body)
+    return "".join(render_education_entry(entry) for entry in entries)
 
 
 def render_education_entry(entry: object) -> str:
@@ -154,19 +322,17 @@ def render_education_entry(entry: object) -> str:
 
 
 def render_skills(skills: object) -> str:
-    rows = "".join(render_skill(skill, index) for index, skill in enumerate(list_value(skills)[:6]))
-    note = f'<p class="skill-note">{escape(FOUR_STAR_NOTE)}</p>' if rows else ""
-    return render_sidebar_section("Skills", rows + note)
+    return render_sidebar_section("Skills", render_skills_body(skills))
 
 
-def render_skill(skill: object, index: int) -> str:
+def render_skills_body(skills: object) -> str:
+    return "".join(render_skill(skill) for skill in list_value(skills)[:6])
+
+
+def render_skill(skill: object) -> str:
     data = normalise_skill(skill)
-    rating = deterministic_skill_rating(index)
     category = escape(data.get("category", "other"))
-    return f"""<div class="skill" data-category="{category}">
-  <span>{escape(data.get("name", ""))}</span>
-  <span class="stars">{render_stars(rating)}</span>
-</div>"""
+    return f'<span class="skill" data-category="{category}">{escape(data.get("name", ""))}</span>'
 
 
 def normalise_skill(skill: object) -> dict[str, str]:
@@ -176,42 +342,22 @@ def normalise_skill(skill: object) -> dict[str, str]:
     return {"name": str(data.get("name", "")), "category": str(data.get("category", "other"))}
 
 
-def deterministic_skill_rating(index: int) -> int:
-    return 5 if index < 4 else 4
-
-
-def render_stars(rating: int) -> str:
-    full = "★" * rating
-    empty = "☆" * (5 - rating)
-    return escape(full + empty)
-
-
-def render_client_facing() -> str:
-    body = "".join(render_client_facing_item(item) for item in CLIENT_FACING_EXPERIENCE)
-    return render_sidebar_section("Client-Facing Experience", body)
-
-
-def render_client_facing_item(item: object) -> str:
-    data = dict_value(item)
-    role = str(data.get("role", ""))
-    place = str(data.get("place", ""))
-    dates = str(data.get("dates", ""))
-    return f"""<div class="client-item">
-  <p class="item-title">{escape(role)}</p>
-  <p>{escape(place)}</p>
-  <p>{escape(dates)}</p>
-</div>"""
-
-
 def render_profile(profile: object) -> str:
+    return render_main_section("Profile", render_profile_body(profile))
+
+
+def render_profile_body(profile: object) -> str:
     data = dict_value(profile)
     content = data.get("content", "")
-    return render_main_section("Profile", f'<p class="profile-text">{escape(str(content))}</p>')
+    return f'<p class="profile-text">{escape(str(content))}</p>' if str(content).strip() else ""
 
 
 def render_work_experience(items: object) -> str:
-    body = "".join(render_work_item(item) for item in list_value(items))
-    return render_main_section("Work Experience", body)
+    return render_main_section("Work Experience", render_work_body(items))
+
+
+def render_work_body(items: object) -> str:
+    return "".join(render_work_item(item) for item in list_value(items))
 
 
 def render_work_item(item: object) -> str:
@@ -235,8 +381,11 @@ def display_role_dates(dates: str) -> str:
 
 
 def render_projects(projects: object) -> str:
-    body = "".join(render_project(project) for project in list_value(projects)[:4])
-    return render_main_section("Projects", body)
+    return render_main_section("Projects", render_projects_body(projects))
+
+
+def render_projects_body(projects: object) -> str:
+    return "".join(render_project(project) for project in list_value(projects)[:4])
 
 
 def render_project(project: object) -> str:
@@ -244,6 +393,14 @@ def render_project(project: object) -> str:
     name = escape(str(data.get("name", "")))
     bullets = render_bullets(data.get("bullets"), limit=2)
     return f'<article class="entry"><h3>{name}</h3>{bullets}</article>'
+
+
+def render_additional_experience(items: object) -> str:
+    return render_main_section("Additional Experience", render_additional_body(items))
+
+
+def render_additional_body(items: object) -> str:
+    return render_bullets(items, limit=3)
 
 
 def render_bullets(items: object, limit: int) -> str:
@@ -286,11 +443,14 @@ body {
 }
 .page {
   width: 210mm;
-  height: 297mm;
-  overflow: hidden;
+  min-height: 297mm;
   margin: 0 auto;
   background: #fff;
   padding: 16mm 15mm 12mm;
+}
+.page.one_page {
+  height: 297mm;
+  overflow: hidden;
 }
 .top {
   border-bottom: 1px solid #555;
@@ -387,30 +547,9 @@ h2 {
   font-size: 8.8pt;
 }
 .skill {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 26mm;
-  align-items: baseline;
-  gap: 2mm;
-  margin-bottom: 1.2mm;
-}
-.skill span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stars {
-  color: #ffd970;
-  font-size: 12.5pt;
-  letter-spacing: 0.02em;
-  line-height: 1;
-}
-.skill[data-category="ai"] .stars {
-  color: #8fa7ff;
-}
-.skill-note {
-  margin-top: 2mm;
-  font-size: 8.6pt;
-  font-style: italic;
+  display: inline-block;
+  margin: 0 1.5mm 1.2mm 0;
+  font-size: 9pt;
 }
 .client-item {
   margin-bottom: 2.6mm;
@@ -446,12 +585,14 @@ li {
   html,
   body {
     width: 210mm;
-    height: 297mm;
     background: #fff;
-    overflow: hidden;
   }
   .page {
     margin: 0;
+  }
+  .page.one_page {
+    height: 297mm;
+    overflow: hidden;
     break-inside: avoid;
     page-break-inside: avoid;
   }
