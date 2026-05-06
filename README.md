@@ -1,5 +1,10 @@
 # Job Hunting CV Agent
 
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
+![Interface](https://img.shields.io/badge/Interface-CLI-lightgrey)
+![Powered by OpenAI](https://img.shields.io/badge/Powered%20by-OpenAI-black)
+![Status](https://img.shields.io/badge/Status-V1-orange)
+
 A local CLI tool for tailoring CVs to job descriptions.
 
 The tool imports an existing CV, builds a reusable HTML template from it, stores your experience as local evidence files, and generates a tailored CV for a job role as HTML and PDF.
