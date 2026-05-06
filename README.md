@@ -1,8 +1,10 @@
-# Job Hunting CV Agent
+# Tailor CV
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![Interface](https://img.shields.io/badge/Interface-CLI-lightgrey)
-![Powered by OpenAI](https://img.shields.io/badge/Powered%20by-OpenAI-black)
+![OpenAI Agents](https://img.shields.io/badge/OpenAI-Agents-black)
+![Local First](https://img.shields.io/badge/Local--first-CV%20workspace-green)
+![PDF Export](https://img.shields.io/badge/Output-HTML%20%2B%20PDF-purple)
 ![Status](https://img.shields.io/badge/Status-V1-orange)
 
 A local CLI tool for tailoring CVs to job descriptions.
