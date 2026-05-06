@@ -10,6 +10,7 @@ DEFAULT_CHROME_PATHS = (
     Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
     Path("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
 )
+RENDER_REPORT_FILENAME = "render-report.md"
 
 
 class PdfRenderError(RuntimeError):
@@ -30,6 +31,7 @@ def render_pdf(request: PdfRenderRequest) -> Path:
     command = build_chrome_pdf_command(chrome_path, html_path, pdf_path)
     run_pdf_command(command)
     assert_pdf_written(pdf_path)
+    append_pdf_render_report(html_path, pdf_path)
     return pdf_path
 
 
@@ -86,3 +88,22 @@ def format_pdf_command_error(result: subprocess.CompletedProcess[str]) -> str:
 def assert_pdf_written(pdf_path: Path) -> None:
     if not pdf_path.exists() or pdf_path.stat().st_size == 0:
         raise PdfRenderError(f"Chrome did not write a PDF at {pdf_path}")
+
+
+def count_pdf_pages(pdf_path: Path) -> int:
+    data = pdf_path.read_bytes()
+    return data.count(b"/Type /Page") - data.count(b"/Type /Pages")
+
+
+def append_pdf_render_report(html_path: Path, pdf_path: Path) -> None:
+    report_path = html_path.parent / RENDER_REPORT_FILENAME
+    page_count = count_pdf_pages(pdf_path)
+    lines = [
+        "",
+        "## PDF Render",
+        "",
+        f"PDF: {pdf_path}",
+        f"Page count: {page_count}",
+    ]
+    existing = report_path.read_text(encoding="utf-8") if report_path.exists() else "# Render Report\n"
+    report_path.write_text(existing.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")

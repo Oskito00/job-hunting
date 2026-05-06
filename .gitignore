@@ -6,5 +6,6 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 applications/
+.cv-agent/
 experience-bank/
 experience-transcripts/

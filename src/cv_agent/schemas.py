@@ -44,14 +44,17 @@ class EducationEntry(StrictModel):
 
 
 class ContactSection(StrictModel):
+    name: str = ""
     email: str = ""
     phone: str = ""
     linkedin: str = ""
     website: str = ""
     github: str = ""
+    location: str = ""
 
 
 class CVContent(StrictModel):
+    page_mode: str = "multi_page"
     profile: ProfileSection
     work_experience: list[WorkExperienceSection] = Field(default_factory=list)
     projects: list[ProjectSection] = Field(default_factory=list)

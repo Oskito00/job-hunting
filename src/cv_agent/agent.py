@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 from cv_agent.config import load_static_profile_config
 from cv_agent.schemas import CVContent, content_to_dict, validate_cv_content
@@ -15,9 +18,9 @@ class CVAgentError(RuntimeError):
     pass
 
 
-def run_cv_agent(job_text: str, company: str, role: str, bank_dir: Path, model: str | None = None) -> dict[str, object]:
+def run_cv_agent(job_text: str, company: str, role: str, bank_dir: Path, model: str | None = None, page_mode: str | None = None) -> dict[str, object]:
     agent = build_cv_agent(bank_dir=bank_dir, model=model)
-    prompt = build_agent_prompt(job_text=job_text, company=company, role=role)
+    prompt = build_agent_prompt(job_text=job_text, company=company, role=role, page_mode=page_mode)
     result = run_agent_sync(agent, prompt)
     content = content_to_dict(result.final_output)
     errors = validate_cv_content(content)
@@ -42,17 +45,60 @@ def build_cv_agent(bank_dir: Path, model: str | None = None):
     )
 
 
-def run_agent_sync(agent, prompt: str):
+def run_agent_sync(agent, prompt: str | Sequence[dict[str, Any]]):
     from agents import Runner
 
     return Runner.run_sync(agent, prompt, max_turns=20)
 
 
-def build_agent_prompt(job_text: str, company: str, role: str) -> str:
+def revise_cv_content_for_fit(
+    cv_content: dict[str, object],
+    render_errors: list[str],
+    job_text: str,
+    company: str,
+    role: str,
+    bank_dir: Path,
+    model: str | None = None,
+) -> dict[str, object]:
+    agent = build_cv_agent(bank_dir=bank_dir, model=model)
+    prompt = build_revision_prompt(cv_content=cv_content, render_errors=render_errors, job_text=job_text, company=company, role=role)
+    result = run_agent_sync(agent, prompt)
+    content = content_to_dict(result.final_output)
+    errors = validate_cv_content(content)
+    if errors:
+        raise CVAgentError("Revised CV content failed validation: " + "; ".join(errors))
+    return content
+
+
+def build_agent_prompt(job_text: str, company: str, role: str, page_mode: str | None = None) -> str:
+    page_guidance = page_mode or "agent_decides_preserve_all_roles"
     return f"""Create tailored CV content JSON for this application.
 
 Company: {company}
 Role: {role}
+Page mode: {page_guidance}
+
+Job description:
+{job_text}
+"""
+
+
+def build_revision_prompt(cv_content: dict[str, object], render_errors: list[str], job_text: str, company: str, role: str) -> str:
+    return f"""Revise this tailored CV content so it fits the requested one-page render limits.
+
+Company: {company}
+Role: {role}
+
+Render errors:
+{chr(10).join(f"- {error}" for error in render_errors)}
+
+Revision policy:
+- Keep all work roles if at all possible.
+- Shorten bullets, reduce projects, and tighten profile/skills before dropping a work role.
+- If a role must be omitted to satisfy one-page rendering, omit only the least relevant/oldest role and preserve evidence coverage for the roles kept.
+
+Current CV content JSON:
+{json.dumps(cv_content, indent=2, ensure_ascii=False)}
 
 Job description:
 {job_text}
@@ -69,10 +115,9 @@ Output only structured CV content matching the declared output type.
 
 Rules:
 - Every profile sentence, work bullet, project bullet, and additional-experience bullet must include evidence paths from the experience bank.
-- Use evidence paths exactly as returned by the tools, for example "projects/cv-database-and-ranking-system.md".
+- Use evidence paths exactly as returned by the tools, for example "projects/payment-platform.md".
 - Do not invent metrics, employers, titles, dates, education, client names, technologies, or outcomes.
-- Render Logan Sinclair dates as "June 2025 - Present"; do not include the exact start day.
-- Treat needs_clarification in source files as caution flags; do not present those details as confirmed.
+- Treat needs_review or needs_clarification in source files as caution flags; do not present those details as confirmed.
 - Prefer relevance to the job description over completeness.
 - Maximise truthful relevance to the job description for both human reviewers and ATS/AI screening.
 - Profile should be 2 sentences maximum and usually 220-280 characters.
@@ -85,21 +130,21 @@ Rules:
 - Do not keyword-stuff or repeat terms unnaturally.
 - Do not mention unsupported requirements just to improve match score.
 - Prefer recent, production, beta-tested, client-facing, or measurable work over weaker examples.
-- Use "Logan Sinclair" work experience when relevant and preserve its confirmed title/dates.
 - Include side projects only when they strengthen the match to the job.
-- Output 4 projects when four relevant, distinct projects are available within the bullet limits.
-- Treat InBetments and the eBay Fast Notification SaaS as eligible right-column projects when they are relevant to the job description.
-- Use InBetments for sports analytics, XGBoost, prediction modelling, quantitative/analytical roles, predictive signals, large-scale historical data, API data ingestion, or model-evaluation matches.
-- Use the eBay Fast Notification SaaS for SaaS, marketplace monitoring, alerting, beta testing, external users, product engineering, or ecommerce matches.
-- Do not put technical side projects in additional_experience; use additional_experience only for non-technical client-facing roles if needed.
-- Keep the right-hand CV column sparse enough for one page: maximum 4 work bullets, maximum 4 projects, and maximum 2 bullets per project.
+- Decide whether work, projects, skills, or additional_experience best express the candidate's fit for this role.
+- Set page_mode to "one_page" when a concise one-page CV is best, or "multi_page" when the role benefits from more detail. Obey an explicit Page mode if provided.
+- Include all work roles by default, using the order implied by the source CV or reverse chronology. Tailor the number and wording of bullets inside each role rather than omitting roles.
+- If Page mode is agent_decides_preserve_all_roles, preserve all work roles and choose multi_page unless all roles naturally fit on one page without cramped wording.
+- If Page mode is one_page, keep all work roles but compress them: use fewer bullets for weakly relevant roles, maximum 4 bullets per role, maximum 4 projects, and maximum 2 bullets per project.
+- Drop a work role only if explicit one-page rendering cannot fit after compression. If you drop a role, mention that omission in additional_experience with evidence.
+- If Page mode is multi_page or agent_decides, include more relevant detail where it improves the application, but avoid padding.
 - Output exactly 6 skills where possible, ordered by relevance to the job description.
 - Skill categories must be one of: ai, software, product, infra, data, other.
 - Skill names must be concise labels, ideally 1-3 words and no longer than 28 characters, so they fit on one line.
 - Skills must be meaningful hiring signals, not generic AI-sounding labels. Avoid vague skills such as "Python APIs", "AI tools", "coding", or "software development".
-- Prefer specific, credible capabilities such as LangChain, MCP, ChromaDB, Neo4j/Cypher, Docker, GitHub Actions, Nginx, Vector Search, Retrieval, Product Discovery, or Requirements Gathering when relevant and supported.
+- Prefer specific, credible capabilities from the evidence bank when relevant and supported.
 - Prefer recruiter-recognisable skill labels; use Product Discovery or User Feedback Loops instead of Requirements Gathering when that better matches the job description.
-- Do not assign skill ratings; the renderer assigns ratings deterministically from skill order.
+- Do not assign skill ratings or imply proficiency stars.
 - Keep bullets short, punchy, and concrete-tech-first.
 - Work bullets should usually be 100-155 characters; project bullets should usually be 90-140 characters.
 - Prefer one concrete claim per bullet.

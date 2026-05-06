@@ -9,7 +9,7 @@ class RenderLimits:
     work_bullet_chars: int = 190
     project_bullet_chars: int = 170
     additional_item_chars: int = 120
-    max_work_items: int = 2
+    max_work_items: int | None = None
     max_work_bullets_per_item: int = 4
     max_projects: int = 4
     max_project_bullets: int = 2
@@ -69,7 +69,9 @@ def validate_additional_limits(content: dict[str, object], limits: RenderLimits)
     return errors
 
 
-def validate_count(label: str, items: list[object], limit: int) -> list[str]:
+def validate_count(label: str, items: list[object], limit: int | None) -> list[str]:
+    if limit is None:
+        return []
     if len(items) <= limit:
         return []
     return [f"{label} has {len(items)} items; limit is {limit}"]
