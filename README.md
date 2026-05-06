@@ -1,20 +1,52 @@
 # Job Hunting CV Agent
 
-CLI tool for importing a CV into a local evidence bank, generating job-tailored CV content, rendering it through a reusable HTML template, and exporting a clickable-link PDF.
+A local CLI tool for tailoring CVs to job descriptions.
 
-## Usage
+The tool imports an existing CV, builds a reusable HTML template from it, stores your experience as local evidence files, and generates a tailored CV for a job role as HTML and PDF.
 
-Activate the virtual environment:
+This is a V1 project: the full CLI flow works, but it is still intended for careful local use rather than as a polished hosted product.
+
+## What It Does
+
+- Stores your source CV locally for reuse.
+- Creates a reusable `template.html` from the uploaded CV.
+- Turns rough experience notes into structured local Markdown evidence files.
+- Fetches job descriptions from URLs, with paste/file fallback.
+- Uses an OpenAI agent to select and tailor relevant content.
+- Renders a tailored `cv.html` and clickable-link `cv.pdf`.
+- Keeps generated CVs and personal evidence out of git.
+
+## Requirements
+
+- Python 3.11+
+- Google Chrome, Chromium, or Microsoft Edge for PDF export
+- An OpenAI API key
+
+## Setup
+
+Clone the repo and install it locally:
 
 ```bash
+git clone https://github.com/Oskito00/job-hunting.git
+cd job-hunting
+python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install -e .
 ```
 
-Add your OpenAI API key to `.env`:
+Create a `.env` file:
 
 ```bash
-OPENAI_API_KEY=...
+OPENAI_API_KEY=your_api_key_here
 ```
+
+You can optionally set a model:
+
+```bash
+OPENAI_MODEL=gpt-5.5
+```
+
+## Quick Start
 
 Run the guided flow:
 
@@ -22,15 +54,17 @@ Run the guided flow:
 cv-agent wizard
 ```
 
-Or use the commands directly.
+The wizard will guide you through importing your CV, adding experience notes, providing a job description, and generating the tailored CV outputs.
 
-Create a local workspace from an existing CV:
+## Normal CLI Flow
+
+Create a local workspace from your current CV:
 
 ```bash
 cv-agent setup --cv path/to/current-cv.pdf
 ```
 
-`init` is also supported as an alias for `setup`. For PDFs, the CLI stores the source CV, renders the CV pages to local images, and uses those images to create the reusable HTML template. Extracted text is still used for the profile and experience bank.
+For PDFs, the CLI stores the source CV, renders page images, and uses those images to create the reusable HTML template. Extracted text is also used to initialise the local profile and experience bank.
 
 Add rough experience notes:
 
@@ -38,7 +72,7 @@ Add rough experience notes:
 cv-agent add-experience --text "Built an internal dashboard with FastAPI and React..."
 ```
 
-You do not need to write YAML by hand. The experience writer agent classifies rough notes into local Markdown evidence files under `.cv-agent/experience-bank/` and adds frontmatter automatically. Manual Markdown editing is still possible for power users.
+You do not need to write YAML by hand. The experience writer agent classifies rough notes into local Markdown evidence files under `.cv-agent/experience-bank/` and adds frontmatter automatically.
 
 Create a tailored CV from a job URL:
 
@@ -46,12 +80,34 @@ Create a tailored CV from a job URL:
 cv-agent create --url "<job-url>" --company "<company>" --role "<role>"
 ```
 
-`create` fetches and extracts the job description from the URL. If extraction is not confident, it asks you to paste the job description. It writes `cv-content.json`, `cv.html`, `cv.pdf`, and reports to an application folder.
+`create` fetches and extracts the job description from the URL. If extraction is not confident, it asks you to paste the job description.
 
-Use a saved job description file instead of a URL:
+Use a saved job description file instead:
 
 ```bash
 cv-agent create --jd-file job.md --company "<company>" --role "<role>"
+```
+
+Each application folder contains:
+
+- `cv-content.json`
+- `cv.html`
+- `cv.pdf`
+- `jd.md`
+- `coverage-report.md`
+- `render-report.md`
+
+Rerender HTML or PDF from an existing application:
+
+```bash
+cv-agent render applications/<application-folder>
+cv-agent pdf applications/<application-folder>
+```
+
+Request strict one-page output:
+
+```bash
+cv-agent create --url "<job-url>" --company "<company>" --role "<role>" --one-page
 ```
 
 Skip PDF export while debugging:
@@ -60,20 +116,45 @@ Skip PDF export while debugging:
 cv-agent create --jd-file job.md --company "<company>" --role "<role>" --no-pdf
 ```
 
-Rerender HTML:
+## Local Files
+
+The tool writes personal and generated files locally:
+
+- `.cv-agent/` stores your source CV, profile, template, and evidence bank.
+- `applications/` stores generated CV outputs.
+- `.env` stores local environment variables.
+
+These paths are ignored by git. Do not commit personal CVs, API keys, or generated application folders.
+
+## Current Limitations
+
+- One-page mode is strict and may need further overflow detection work.
+- The generated template controls the overall CV layout, but repeated section internals are still partly rendered by Python.
+- Voice-note ingestion is not part of V1.
+- Job URL extraction works for normal readable pages, but some sites may require paste/file fallback.
+
+Planned follow-up issues are tracked in `docs/issues/`.
+
+## Developer Notes
+
+Run tests with:
 
 ```bash
-cv-agent render applications/<application-folder>
+python -m unittest discover tests
 ```
 
-Rerender PDF:
+Useful checks before opening a PR:
 
 ```bash
-cv-agent pdf applications/<application-folder>
+python -m compileall -q src tests
+git diff --check
 ```
 
-Use `--one-page` with `create` or `render` to request strict one-page output. Without it, the agent preserves work history by default and the renderer allows a flowing multi-page CV.
+Contribution workflow:
 
-Generated application outputs are ignored by git. The local `.env` file is also ignored and should contain `OPENAI_API_KEY`.
+- Create a branch from `main`.
+- Keep personal data out of commits.
+- Add or update focused tests for behavior changes.
+- Open a pull request back into `main`.
 
-The `.cv-agent/`, `experience-bank/`, and `experience-transcripts/` directories are local-only inputs and are ignored by git.
+Main is protected by repository rules, so changes should go through PRs rather than direct pushes.
