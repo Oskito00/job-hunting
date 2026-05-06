@@ -1,4 +1,11 @@
-# Job Hunting CV Agent
+# Tailor CV
+
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
+![Interface](https://img.shields.io/badge/Interface-CLI-lightgrey)
+![OpenAI Agents](https://img.shields.io/badge/OpenAI-Agents-black)
+![Local First](https://img.shields.io/badge/Local--first-CV%20workspace-green)
+![PDF Export](https://img.shields.io/badge/Output-HTML%20%2B%20PDF-purple)
+![Status](https://img.shields.io/badge/Status-V1-orange)
 
 A local CLI tool for tailoring CVs to job descriptions.
 
@@ -88,6 +95,20 @@ Use a saved job description file instead:
 cv-agent create --jd-file job.md --company "<company>" --role "<role>"
 ```
 
+The tool is reusable across multiple roles. Run setup once:
+
+```bash
+cv-agent setup --cv path/to/current-cv.pdf
+```
+
+That creates the local `.cv-agent/` workspace. Then create a new application pack for each role:
+
+```bash
+cv-agent create --url "<job-url>" --company "Company A" --role "Role A"
+cv-agent create --url "<job-url-2>" --company "Company B" --role "Role B"
+cv-agent create --jd-file another-job.md --company "Company C" --role "Role C"
+```
+
 Each application folder contains:
 
 - `cv-content.json`
@@ -133,9 +154,9 @@ These paths are ignored by git. Do not commit personal CVs, API keys, or generat
 - Voice-note ingestion is not part of V1.
 - Job URL extraction works for normal readable pages, but some sites may require paste/file fallback.
 
-Planned follow-up issues are tracked in `docs/issues/`.
-
 ## Developer Notes
+
+Contributors are welcome. This is an early project, so small, focused pull requests are preferred.
 
 Run tests with:
 
@@ -155,6 +176,6 @@ Contribution workflow:
 - Create a branch from `main`.
 - Keep personal data out of commits.
 - Add or update focused tests for behavior changes.
-- Open a pull request back into `main`.
+- Open a pull request back into `main` with a clear summary and test notes.
 
 Main is protected by repository rules, so changes should go through PRs rather than direct pushes.
