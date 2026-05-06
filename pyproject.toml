@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cv-agent"
 version = "0.1.0"
 description = "CLI agent for generating tailored CV content JSON from job descriptions."
-readme = "experience-bank/README.md"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "openai-agents>=0.6.0",

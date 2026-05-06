@@ -29,3 +29,5 @@ cv-agent pdf applications/<application-folder>/cv.html
 ```
 
 Generated application outputs are ignored by git. The local `.env` file is also ignored and should contain `OPENAI_API_KEY`.
+
+The `experience-bank/` and `experience-transcripts/` directories are local-only inputs and are ignored by git.

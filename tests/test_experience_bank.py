@@ -43,11 +43,20 @@ class ExperienceBankTest(unittest.TestCase):
             self.assertEqual(len(results), 12)
 
     def test_worldquant_query_surfaces_inbetments(self) -> None:
-        bank = Path(__file__).resolve().parents[1] / "experience-bank"
-        files = load_experience_files(bank)
-        query = "WorldQuant predictive signals alphas Python analytical complex problems vector databases language models scalable AI-driven products"
-        paths = [result.path for result in search_experience_files(query, files)]
-        self.assertIn("projects/inbetments-football-prediction-model.md", paths)
+        with tempfile.TemporaryDirectory() as tmp:
+            bank = Path(tmp) / "bank"
+            projects = bank / "projects"
+            projects.mkdir(parents=True)
+            (projects / "inbetments-football-prediction-model.md").write_text(
+                "---\ntitle: Football Prediction Model\nskills:\n  - Python\n  - predictive signals\n  - vector databases\n---\n"
+                "# Project\nBuilt analytical alphas for complex WorldQuant-style modelling problems.",
+                encoding="utf-8",
+            )
+            (projects / "crm-workflow.md").write_text("---\ntitle: CRM Workflow\n---\n# Project\nBuilt recruiting workflow tools.", encoding="utf-8")
+            files = load_experience_files(bank)
+            query = "WorldQuant predictive signals alphas Python analytical complex problems vector databases language models scalable AI-driven products"
+            paths = [result.path for result in search_experience_files(query, files)]
+            self.assertIn("projects/inbetments-football-prediction-model.md", paths)
 
 
 if __name__ == "__main__":
