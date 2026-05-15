@@ -36,15 +36,21 @@ Clone the repo and install it locally:
 ```bash
 git clone https://github.com/Oskito00/job-hunting.git
 cd job-hunting
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
 ```
 
-Create a `.env` file:
+Copy the example environment file and add your API key:
 
 ```bash
-OPENAI_API_KEY=your_api_key_here
+cp .env.example .env
+```
+
+`.env` should contain:
+
+```bash
+OPENAI_API_KEY=sk-your-api-key-here
 ```
 
 You can optionally set a model:
@@ -52,6 +58,8 @@ You can optionally set a model:
 ```bash
 OPENAI_MODEL=gpt-5.5
 ```
+
+The PDF command requires Google Chrome, Chromium, or Microsoft Edge. On macOS the tool checks the standard `/Applications` locations, or you can pass `--chrome`.
 
 ## Quick Start
 
@@ -144,8 +152,9 @@ The tool writes personal and generated files locally:
 - `.cv-agent/` stores your source CV, profile, template, and evidence bank.
 - `applications/` stores generated CV outputs.
 - `.env` stores local environment variables.
+- `applications-tracker.md` is a blank tracker template for application status and generated CV paths.
 
-These paths are ignored by git. Do not commit personal CVs, API keys, or generated application folders.
+These paths are ignored by git where they contain personal data. Do not commit personal CVs, API keys, or generated application folders.
 
 ## Current Limitations
 
@@ -158,10 +167,16 @@ These paths are ignored by git. Do not commit personal CVs, API keys, or generat
 
 Contributors are welcome. This is an early project, so small, focused pull requests are preferred.
 
+Install development dependencies:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
 Run tests with:
 
 ```bash
-python -m unittest discover tests
+pytest
 ```
 
 Useful checks before opening a PR:
